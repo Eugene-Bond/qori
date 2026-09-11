@@ -1,208 +1,58 @@
-# qori
+<h1 align="center">qori</h1>
 
-> **Query Orchestration & Reasoning Infrastructure**
+<p align="center">
+  <b>Query Orchestration & Reasoning Infrastructure for LLM applications</b><br/>
+  Explicit primitives for AI-native software: typed tools, staged reasoning, replayable traces.
+</p>
 
-**qori** is an experimental framework for building explicit, observable
-LLM workflows.
+<p align="center">
+  <img src="https://img.shields.io/badge/status-experimental-orange" alt="Status">
+  <img src="https://img.shields.io/badge/python-3.10%2B-3776ab" alt="Python">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>
+</p>
 
-The project explores a simple idea: reasoning pipelines should be made
-from small, inspectable primitives rather than hidden inside
-increasingly complicated prompts or opaque agent runtimes.
+---
 
-qori is being designed around **pipelines**, **typed tools**,
-**reasoning stages**, **execution traces**, and **deterministic
-replay**.
+**qori** is a framework for teams building with large language models. It provides a small, composable vocabulary for describing AI capabilities across applications, agents, and pipelines — without coupling projects to a specific model provider.
 
-> **Project status:** early design / experimental. The APIs shown below
-> describe the intended direction of qori and should not yet be
-> considered stable or production-ready.
-
-------------------------------------------------------------------------
+The project is intentionally early-stage. The goal is to explore what an application framework should look like when LLMs are treated as a core architectural primitive rather than an integration bolted on at the edge.
 
 ## Why qori?
 
-LLM applications tend to start simple:
+Most LLM frameworks either hide too much (opaque chains you can't debug) or expose too little (raw API calls you orchestrate yourself). qori sits in between: a small, explicit runtime where every step of a reasoning pipeline is a typed, inspectable, replayable unit.
 
-``` python
-response = model.generate(prompt)
-```
+The framework is designed around a few principles:
 
-Then they accumulate retrieval, tools, retries, validation, planning,
-state, observability, and evaluation.
+- **AI-native by default** — models, tools, context, retrieval, and evaluation are first-class concepts
+- **Provider agnostic** — application logic should not depend on one model vendor
+- **Composable** — small primitives work independently and combine into larger workflows
+- **Observable** — prompts, model calls, tool execution, and outputs are always inspectable
+- **Replayable** — every run produces a trace that can be re-executed and asserted against in tests
+- **Minimal surface area** — qori adds conventions without becoming the application itself
 
-Eventually, the interesting part of the application is no longer the
-model call. It is the orchestration around it.
+## Concept
 
-qori aims to make that orchestration explicit:
+A qori application is a pipeline of explicit reasoning stages operating over a shared state:
 
-``` text
+```text
 input
-  │
-  ▼
-┌──────┐
-│ plan │
-└───┬──┘
-    ▼
-┌─────┐
-│ act │──────► tools
-└──┬──┘
-   ▼
-┌────────┐
-│ verify │
-└───┬────┘
-    ▼
-  output
-    │
-    ▼
-  Trace
+  → context
+  → plan
+  → act        (tool calls)
+  → verify
+  → output
+  ↳ trace      (everything above, serialised)
 ```
 
-Every execution should be inspectable. Every tool boundary should be
-typed. Every pipeline should be testable without requiring live model
-calls.
+Stages are plain Python. Deployment, infrastructure, and product architecture stay in the developer's hands.
 
-## Design principles
+## Example API
 
--   **Provider agnostic** --- application architecture should not depend
-    on a particular model vendor.
--   **Typed tool contracts** --- model-generated arguments should be
-    validated before application code receives them.
--   **Observable by default** --- model calls, tools, state transitions,
-    timings, and token usage belong in the execution trace.
--   **Composable reasoning** --- `plan`, `act`, `verify`, and `reflect`
-    are explicit stages rather than conventions buried in prompts.
--   **Replayable execution** --- recorded model outputs should make
-    pipeline logic reproducible during development and testing.
--   **Plain Python** --- pipelines should remain understandable without
-    learning a large DSL.
+> The API below illustrates the direction of the project and is not yet a stable public interface.
 
-------------------------------------------------------------------------
-
-## Proposed API
-
-The following API represents the current design direction.
-
-``` python
+```python
 from qori import Pipeline, Model, tool
-
-pipeline = (
-    Pipeline("research-agent")
-    .plan(Model("default"))
-    .act(tools=[search], max_steps=6)
-    .verify(
-        Model("default"),
-        criteria="answer must be grounded in retrieved sources",
-    )
-)
-
-result = pipeline.run(
-    "Summarize the most important changes in the latest release."
-)
-
-print(result.answer)
-print(result.trace.summary())
-```
-
-A pipeline is an ordered set of reasoning stages operating over shared
-state.
-
-The runtime records the execution as a `Trace`, allowing the same run to
-be inspected, evaluated, compared, or eventually replayed.
-
-------------------------------------------------------------------------
-
-## Core concepts
-
-  -----------------------------------------------------------------------
-  Concept                             Purpose
-  ----------------------------------- -----------------------------------
-  `Pipeline`                          Composes model, reasoning, tool,
-                                      and validation stages into an
-                                      executable workflow.
-
-  `Model`                             Provider-independent interface for
-                                      model execution and configuration.
-
-  `tool`                              Converts an application function
-                                      into a schema-validated model tool.
-
-  `State`                             Explicit data passed between
-                                      pipeline stages.
-
-  `Trace`                             Structured record of model calls,
-                                      tool calls, state transitions,
-                                      timings, and outputs.
-
-  `Replay`                            Re-executes pipeline logic against
-                                      recorded model outputs for
-                                      deterministic testing.
-  -----------------------------------------------------------------------
-
-These concepts intentionally describe orchestration rather than a
-particular model provider.
-
-------------------------------------------------------------------------
-
-## Reasoning stages
-
-qori experiments with reasoning operations as first-class pipeline
-primitives.
-
-### `plan`
-
-Produces or updates an execution plan.
-
-``` python
-pipeline.plan(model)
-```
-
-### `act`
-
-Allows a model to execute registered tools against the current state.
-
-``` python
-pipeline.act(
-    tools=[search, fetch],
-    max_steps=6,
-)
-```
-
-### `verify`
-
-Evaluates the current result against explicit criteria.
-
-``` python
-pipeline.verify(
-    model,
-    criteria="claims must be supported by retrieved context",
-)
-```
-
-### `reflect`
-
-Optionally feeds verification results back into the pipeline before
-producing the final output.
-
-``` python
-pipeline.reflect(model, max_attempts=2)
-```
-
-The goal is not to prescribe one reasoning strategy. These stages
-provide a vocabulary for constructing and inspecting different
-strategies.
-
-------------------------------------------------------------------------
-
-## Typed tools
-
-Tools represent the boundary between probabilistic model output and
-deterministic application code.
-
-The intended interface uses ordinary Python types or schema models:
-
-``` python
 from pydantic import BaseModel
-from qori import tool
 
 class SearchArgs(BaseModel):
     query: str
@@ -210,240 +60,111 @@ class SearchArgs(BaseModel):
 
 @tool(schema=SearchArgs)
 def search(args: SearchArgs) -> list[str]:
-    return index.search(
-        args.query,
-        limit=args.limit,
-    )
-```
+    """Search application knowledge."""
+    return index.search(args.query, k=args.limit)
 
-Arguments should be validated **before** the underlying function
-executes.
-
-Tool calls should also become part of the execution trace automatically.
-
-------------------------------------------------------------------------
-
-## Trace
-
-A `Trace` is intended to be the canonical representation of a qori
-execution.
-
-``` text
-Trace
-├── input
-├── stages
-│   ├── plan
-│   │   └── model_call
-│   ├── act
-│   │   ├── model_call
-│   │   └── tool_call
-│   └── verify
-│       └── model_call
-├── output
-├── usage
-└── timing
-```
-
-Rather than treating observability as an external add-on, qori aims to
-make execution metadata part of the runtime itself.
-
-This should make it possible to answer questions such as:
-
-``` python
-trace.model_calls()
-trace.tool_calls("search")
-trace.stage("verify")
-trace.usage
-trace.duration
-```
-
-without reconstructing what happened from application logs.
-
-------------------------------------------------------------------------
-
-## Replay
-
-LLM output is probabilistic. Pipeline logic does not have to be.
-
-qori's proposed `Replay` abstraction separates the two.
-
-A recorded trace can supply previously observed model responses while
-the orchestration code executes normally:
-
-``` python
-from qori.testing import replay
-
-trace = replay(
-    "fixtures/research-run.json",
-    pipeline,
+pipeline = (
+    Pipeline("researcher")
+    .plan(Model("default"))
+    .act(tools=[search], max_steps=6)
+    .verify(criteria="answer cites at least two sources")
 )
 
-assert trace.verify_passed
-assert len(trace.tool_calls("search")) >= 2
+result = pipeline.run("Summarize the most important changes in the latest release.")
+print(result.output)
+print(result.trace.summary())
 ```
 
-This makes it possible to test orchestration, tool handling, validation,
-and state transitions without repeatedly invoking a live model.
+The same primitives are meant to cover simple model calls, deterministic workflows, retrieval-augmented generation, and multi-step agents.
 
-The longer-term goal is to support trace comparison as well:
+## Intended Modules
 
-``` text
-baseline trace
-      │
-      ▼
-    Replay
-      │
-      ├── state diff
-      ├── tool-call diff
-      ├── output diff
-      └── evaluation
+| Module | Purpose |
+| --- | --- |
+| `qori.models` | Unified model interfaces, retries, rate limits, cost tracking |
+| `qori.prompts` | Reusable and versionable prompt definitions |
+| `qori.tools` | Typed functions exposed to models, validated before execution |
+| `qori.context` | Context construction and lifecycle management |
+| `qori.retrieval` | Retrieval and grounding primitives |
+| `qori.pipeline` | Staged reasoning runtime (`plan` / `act` / `verify` / `reflect`) |
+| `qori.trace` | Execution traces, replay, and diffing |
+| `qori.eval` | Evaluations, assertions, and regression testing |
+
+## Testing pipelines
+
+Traces are plain JSON. A recorded run can be replayed with mocked model outputs so pipeline logic is tested deterministically:
+
+```python
+from qori.trace import replay
+
+def test_researcher_cites_sources():
+    trace = replay("fixtures/researcher-0412.json", pipeline)
+    assert trace.verify_passed
+    assert len(trace.tool_calls("search")) >= 2
 ```
 
-------------------------------------------------------------------------
+## Status
 
-## Architecture
+**Experimental / pre-release.** Interfaces, naming, and package structure may change substantially before a first stable release.
 
-qori is currently being designed around a small set of modules:
+Current priorities:
 
-``` text
-qori
-├── models
-├── pipeline
-├── stages
-├── tools
-├── context
-├── trace
-├── replay
-├── eval
-└── observe
-```
-
-  Module            Responsibility
-  ----------------- ---------------------------------------------------
-  `qori.models`     Model interfaces and provider adapters
-  `qori.pipeline`   Pipeline composition and execution
-  `qori.stages`     `plan`, `act`, `verify`, and `reflect` primitives
-  `qori.tools`      Typed tool definitions and execution
-  `qori.context`    Context and state construction
-  `qori.trace`      Execution traces and serialization
-  `qori.replay`     Deterministic trace replay
-  `qori.eval`       Assertions, evaluations, and regression testing
-  `qori.observe`    Runtime instrumentation and exporters
-
-------------------------------------------------------------------------
+1. Define the smallest useful set of AI-native primitives
+2. Establish provider-independent model and tool interfaces
+3. Make structured generation and validation ergonomic
+4. Build tracing and replay into the core execution model
+5. Keep the framework small enough to understand end-to-end
 
 ## Installation
 
-qori is currently experimental and has not reached a stable public
-release.
+A public package is not available yet.
 
-The intended installation interface is:
-
-``` bash
+```bash
+# Placeholder for a future release
 pip install qori
 ```
 
-Until an official package is published, examples in this README should
-be treated as design documentation rather than a stable API.
+Until a release is published, do not depend on qori in production systems.
 
-------------------------------------------------------------------------
+## Non-Goals
 
-## Non-goals
+qori does not aim to:
 
-qori does **not** aim to:
-
--   hide model behavior behind excessive abstraction;
--   turn every model call into an autonomous agent;
--   prescribe a particular model provider;
--   prescribe a vector database or retrieval architecture;
--   replace application-specific business logic;
--   pretend probabilistic systems are deterministic.
-
-The framework should expose important decisions rather than conceal
-them.
-
-------------------------------------------------------------------------
+- hide important model behavior behind excessive abstraction
+- prescribe a vector database, model provider, or deployment platform
+- turn every LLM call into an autonomous agent
+- replace application-specific business logic
+- promise deterministic behavior where the underlying model is probabilistic
 
 ## Roadmap
 
-### Runtime
-
--   [ ] `Pipeline` execution model
--   [ ] `State` lifecycle
--   [ ] reasoning stages
--   [ ] structured model outputs
--   [ ] typed tool execution
-
-### Observability
-
--   [ ] `Trace` representation
--   [ ] trace serialization
--   [ ] token and timing metadata
--   [ ] execution visualization
--   [ ] OpenTelemetry integration
-
-### Testing
-
--   [ ] deterministic `Replay`
--   [ ] trace assertions
--   [ ] trace diffing
--   [ ] evaluation primitives
--   [ ] regression fixtures
-
-### Ecosystem
-
--   [ ] provider adapters
--   [ ] reference pipelines
--   [ ] documentation
--   [ ] public package release
-
-------------------------------------------------------------------------
+- [x] Design notes and module layout
+- [ ] Core model abstraction
+- [ ] Typed tool registration and execution
+- [ ] Prompt and context primitives
+- [ ] Pipeline runtime with staged reasoning
+- [ ] Trace serialisation and replay
+- [ ] Retrieval interfaces
+- [ ] Evaluation toolkit
+- [ ] Reference applications
+- [ ] Public package release
 
 ## Security
 
-Model output should always be treated as untrusted input.
+LLM applications introduce risks that a framework cannot eliminate automatically. Applications built with qori should treat model output as untrusted input, validate tool arguments, isolate privileged operations, and keep secrets out of model-visible context.
 
-Applications using qori should validate tool arguments, isolate
-privileged operations, restrict model-accessible capabilities, avoid
-exposing secrets through context, and perform threat modeling
-appropriate to their deployment.
-
-A framework can provide safer primitives, but it cannot make arbitrary
-agent execution safe automatically.
-
-------------------------------------------------------------------------
+Security-sensitive deployments should perform their own threat modeling and review.
 
 ## Contributing
 
-qori is currently in the design phase.
+qori is at an exploratory stage, so design discussion is currently more valuable than large implementation pull requests. Useful contributions include API design proposals, minimal reproducible workflow examples, evaluation and observability ideas, provider-abstraction edge cases, and documentation improvements.
 
-At this stage, useful contributions include:
-
--   API design proposals;
--   orchestration patterns;
--   trace and replay semantics;
--   provider-abstraction edge cases;
--   evaluation strategies;
--   minimal reproducible LLM workflows.
-
-For significant changes, start with an issue or design discussion
-describing the use case and the smallest abstraction needed to support
-it.
-
-------------------------------------------------------------------------
+Before proposing a large feature, open a discussion or issue describing the use case and the smallest abstraction that could support it.
 
 ## License
 
-A license will be selected before the first public release.
+Apache 2.0 — see [LICENSE](LICENSE).
 
-------------------------------------------------------------------------
+---
 
-```{=html}
-<p align="center">
-```
-`<strong>`{=html}qori`</strong>`{=html}`<br/>`{=html}
-`<sub>`{=html}Explicit infrastructure for observable LLM
-reasoning.`</sub>`{=html}
-```{=html}
-</p>
-```
+<p align="center"><sub><strong>qori</strong> — explicit primitives for AI-native software.</sub></p>
