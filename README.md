@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-experimental-orange" alt="Status">
-  <img src="https://img.shields.io/badge/python-3.10%2B-3776ab" alt="Python">
+  <img src="https://img.shields.io/badge/python-3.18%2B-3776ab" alt="Python">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>
 </p>
 
