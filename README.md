@@ -1,8 +1,8 @@
 <h1 align="center">qori</h1>
 
 <p align="center">
-  <b>Query Orchestration & Reasoning Infrastructure for LLM applications</b><br/>
-  Explicit primitives for AI-native software: typed tools, staged reasoning, replayable traces.
+  <b>Observability and tracing for LLM-involved systems</b><br/>
+  Detect where language models are at work, trace what they produce, and keep every step inspectable.
 </p>
 
 <p align="center">
@@ -13,18 +13,18 @@
 
 ---
 
-**qori** is a framework for teams building with large language models. It provides a small, composable vocabulary for describing AI capabilities across applications, agents, and pipelines — without coupling projects to a specific model provider.
+**qori** is a lightweight framework for teams building with, or alongside, large language models. It provides a small, composable vocabulary for making LLM involvement explicit: which model touched which data, through which prompts and tools, and what came out the other end — without coupling a project to any single provider.
 
-The project is intentionally early-stage. The goal is to explore what an application framework should look like when LLMs are treated as a core architectural primitive rather than an integration bolted on at the edge.
+The project is intentionally early-stage. The goal is to explore what observability should look like when LLMs are treated as a core architectural primitive rather than a black box bolted on at the edge.
 
 ## Why qori?
 
-Most LLM frameworks either hide too much (opaque chains you can't debug) or expose too little (raw API calls you orchestrate yourself). qori sits in between: a small, explicit runtime where every step of a reasoning pipeline is a typed, inspectable, replayable unit.
+AI is increasingly embedded in ordinary software and ordinary communication, but the LLM layer is usually hidden behind application-specific abstractions. qori aims to bring that layer into the open.
 
 The framework is designed around a few principles:
 
-- **AI-native by default** — models, tools, context, retrieval, and evaluation are first-class concepts
-- **Provider agnostic** — application logic should not depend on one model vendor
+- **Provenance first** — every model-generated artifact carries a record of how it was produced
+- **Provider agnostic** — tracing and detection logic should not depend on one model vendor
 - **Composable** — small primitives work independently and combine into larger workflows
 - **Observable** — prompts, model calls, tool execution, and outputs are always inspectable
 - **Replayable** — every run produces a trace that can be re-executed and asserted against in tests
@@ -32,36 +32,31 @@ The framework is designed around a few principles:
 
 ## Concept
 
-A qori application is a pipeline of explicit reasoning stages operating over a shared state:
+qori models an LLM-involved system as a set of traced stages. Anything a model touches leaves a mark:
 
 ```text
 input
   → context
-  → plan
-  → act        (tool calls)
-  → verify
-  → output
-  ↳ trace      (everything above, serialised)
+  → model        ─┐
+  → tool          ├─ trace: who, what, with which prompt, at what cost
+  → model        ─┘
+  → validation
+  → output       (tagged with provenance)
 ```
 
-Stages are plain Python. Deployment, infrastructure, and product architecture stay in the developer's hands.
+The same trace format is used whether qori is orchestrating the pipeline itself or observing an existing one from the outside.
 
 ## Example API
 
 > The API below illustrates the direction of the project and is not yet a stable public interface.
 
 ```python
-from qori import Pipeline, Model, tool
-from pydantic import BaseModel
+from qori import Pipeline, Model, tool, trace
 
-class SearchArgs(BaseModel):
-    query: str
-    limit: int = 5
-
-@tool(schema=SearchArgs)
-def search(args: SearchArgs) -> list[str]:
+@tool
+def search(query: str, limit: int = 5) -> list[str]:
     """Search application knowledge."""
-    return index.search(args.query, k=args.limit)
+    return index.search(query, k=limit)
 
 pipeline = (
     Pipeline("researcher")
@@ -71,11 +66,21 @@ pipeline = (
 )
 
 result = pipeline.run("Summarize the most important changes in the latest release.")
+
 print(result.output)
 print(result.trace.summary())
+# 3 model calls · 2 tool calls · verify: passed · 2,314 tokens · 6.8s
 ```
 
-The same primitives are meant to cover simple model calls, deterministic workflows, retrieval-augmented generation, and multi-step agents.
+Observing a system you don't control:
+
+```python
+from qori.detect import Provenance
+
+report = Provenance.inspect(document)
+print(report.llm_involvement)   # likely | unlikely | inconclusive
+print(report.signals)           # structural and stylistic markers that informed the estimate
+```
 
 ## Intended Modules
 
@@ -85,9 +90,9 @@ The same primitives are meant to cover simple model calls, deterministic workflo
 | `qori.prompts` | Reusable and versionable prompt definitions |
 | `qori.tools` | Typed functions exposed to models, validated before execution |
 | `qori.context` | Context construction and lifecycle management |
-| `qori.retrieval` | Retrieval and grounding primitives |
 | `qori.pipeline` | Staged reasoning runtime (`plan` / `act` / `verify` / `reflect`) |
-| `qori.trace` | Execution traces, replay, and diffing |
+| `qori.trace` | Execution traces, provenance tags, replay, and diffing |
+| `qori.detect` | Heuristics for estimating LLM involvement in untraced content |
 | `qori.eval` | Evaluations, assertions, and regression testing |
 
 ## Testing pipelines
@@ -109,10 +114,10 @@ def test_researcher_cites_sources():
 
 Current priorities:
 
-1. Define the smallest useful set of AI-native primitives
+1. Define the smallest useful set of tracing and provenance primitives
 2. Establish provider-independent model and tool interfaces
-3. Make structured generation and validation ergonomic
-4. Build tracing and replay into the core execution model
+3. Make replay and diffing of traces ergonomic
+4. Explore reliable signals for LLM involvement in untraced content
 5. Keep the framework small enough to understand end-to-end
 
 ## Installation
@@ -130,9 +135,9 @@ Until a release is published, do not depend on qori in production systems.
 
 qori does not aim to:
 
-- hide important model behavior behind excessive abstraction
+- hide model behavior behind excessive abstraction
 - prescribe a vector database, model provider, or deployment platform
-- turn every LLM call into an autonomous agent
+- offer a definitive "AI or not" verdict — `qori.detect` produces estimates with stated signals, never certainties
 - replace application-specific business logic
 - promise deterministic behavior where the underlying model is probabilistic
 
@@ -141,10 +146,9 @@ qori does not aim to:
 - [x] Design notes and module layout
 - [ ] Core model abstraction
 - [ ] Typed tool registration and execution
-- [ ] Prompt and context primitives
 - [ ] Pipeline runtime with staged reasoning
-- [ ] Trace serialisation and replay
-- [ ] Retrieval interfaces
+- [ ] Trace serialisation, provenance tags, and replay
+- [ ] Detection heuristics for untraced content
 - [ ] Evaluation toolkit
 - [ ] Reference applications
 - [ ] Public package release
@@ -153,11 +157,11 @@ qori does not aim to:
 
 LLM applications introduce risks that a framework cannot eliminate automatically. Applications built with qori should treat model output as untrusted input, validate tool arguments, isolate privileged operations, and keep secrets out of model-visible context.
 
-Security-sensitive deployments should perform their own threat modeling and review.
+Detection results from `qori.detect` are probabilistic and should never be the sole basis for decisions about people.
 
 ## Contributing
 
-qori is at an exploratory stage, so design discussion is currently more valuable than large implementation pull requests. Useful contributions include API design proposals, minimal reproducible workflow examples, evaluation and observability ideas, provider-abstraction edge cases, and documentation improvements.
+qori is at an exploratory stage, so design discussion is currently more valuable than large implementation pull requests. Useful contributions include API design proposals, minimal reproducible workflow examples, provenance and tracing ideas, provider-abstraction edge cases, and documentation improvements.
 
 Before proposing a large feature, open a discussion or issue describing the use case and the smallest abstraction that could support it.
 
@@ -167,4 +171,4 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-<p align="center"><sub><strong>qori</strong> — explicit primitives for AI-native software.</sub></p>
+<p align="center"><sub><strong>qori</strong> — bringing LLM involvement into the open.</sub></p>
